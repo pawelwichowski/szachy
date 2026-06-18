@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import ChessGame from './components/game/ChessGame';
 import ConnectionNotice from './components/common/ConnectionNotice';
 import CreateRoomDialog from './components/common/CreateRoomDialog';
+import RoomConnectionScreen from './components/common/RoomConnectionScreen';
 import HomeScreen from './components/lobby/HomeScreen';
 import RoomLobby from './components/lobby/RoomLobby';
 import { createInitialGameState } from './domain/chess';
@@ -25,6 +26,7 @@ export default function App() {
   const [session, setSession] = useState(initialSession);
   const [room, setRoom] = useState(null);
   const [screen, setScreen] = useState(initialSession ? 'game' : 'home');
+  const [isRestoringRoom, setIsRestoringRoom] = useState(Boolean(initialSession));
   const [localGameState, setLocalGameState] = useState(createInitialGameState);
   const [joinCode, setJoinCode] = useState(roomFromUrl);
   const [joinError, setJoinError] = useState('');
@@ -42,6 +44,7 @@ export default function App() {
     setSession(null);
     setRoom(null);
     setScreen('home');
+    setIsRestoringRoom(false);
     setCopiedMessage('');
     setJoinError('');
   }, []);
@@ -49,6 +52,7 @@ export default function App() {
   const handleRoomState = useCallback((nextRoom) => {
     setRoom(nextRoom);
     setScreen(nextRoom.status === 'waiting' ? 'lobby' : 'game');
+    setIsRestoringRoom(false);
   }, []);
 
   const online = useOnlineRoom({
@@ -107,6 +111,7 @@ export default function App() {
   function startLocalGame() {
     saveSession(null);
     setRoom(null);
+    setIsRestoringRoom(false);
     setLocalGameState(createInitialGameState());
     setScreen('game');
   }
@@ -130,7 +135,14 @@ export default function App() {
 
   let content;
 
-  if (screen === 'home') {
+  if (isRestoringRoom && session && !room) {
+    content = (
+      <RoomConnectionScreen
+        connectionState={online.connectionState}
+        onReturnHome={clearSessionAndReturnHome}
+      />
+    );
+  } else if (screen === 'home') {
     content = (
       <>
         <HomeScreen
