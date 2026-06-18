@@ -1,17 +1,19 @@
 # Szachy online
 
-Projekt na przedmiot **Aplikacje internetowe**. Aplikacja jest rozwijana etapami jako klient React, a w następnych etapach otrzyma serwer Python/Flask i bazę danych.
+Projekt na przedmiot **Aplikacje internetowe**. Aplikacja jest rozwijana etapami jako klient React, a w kolejnych etapach otrzyma serwer Python/Flask i bazę danych.
 
-## Aktualny etap: lobby, pokoje i gra
+## Aktualny etap: pokoje, sterowanie partią i orientacja planszy
 
-- strona startowa umożliwiająca wybór trybu gry;
-- gra lokalna dla dwóch osób na jednym urządzeniu;
-- tworzenie prywatnego pokoju z losowym, sześcioliterowym kodem;
-- kopiowanie kodu oraz linku prowadzącego do pokoju;
-- dołączenie do wolnego pokoju jako gracz czarny;
-- automatyczne przejście do planszy, gdy do pokoju dołączy drugi gracz;
+- strona startowa z grą lokalną, tworzeniem prywatnego pokoju i dołączaniem kodem;
+- wybór koloru gospodarza pokoju: **białe**, **czarne** albo **losowo**;
+- automatyczne przypisanie przeciwnego koloru graczowi dołączającemu;
+- szachownica odwracana dla gracza czarnymi: własne figury zawsze są na dole;
+- prywatny kod i link do pokoju;
 - synchronizacja pozycji i historii ruchów między kartami tej samej przeglądarki;
-- blokowanie ruchów po stronie gracza, który nie ma aktualnie tury;
+- blokowanie ruchów po stronie gracza, który nie ma tury;
+- przycisk poddania partii z potwierdzeniem i poprawnym wynikiem;
+- oferta remisu oraz zaakceptowanie albo odrzucenie jej przez przeciwnika;
+- wyraźny powrót do menu głównego z potwierdzeniem;
 - legalne ruchy, szach, mat, pat, remisy, roszada, bicie w przelocie i promocja pionka;
 - historia ruchów w SAN oraz podgląd pozycji po wybranym ruchu.
 
@@ -21,10 +23,12 @@ Reguły gry obsługuje biblioteka `chess.js`. Pozycja po każdym ruchu jest zapi
 
 1. Uruchom aplikację przez `npm run dev`.
 2. Wybierz **Utwórz prywatny pokój**.
-3. Skopiuj link lub kod.
-4. Otwórz link w drugiej karcie **tej samej przeglądarki** albo ręcznie wpisz kod na stronie startowej.
-5. W drugiej karcie kliknij **Dołącz do pokoju**.
-6. Pierwsza karta gra białymi, druga czarnymi. Ruch wykonany w jednej karcie pojawia się w drugiej.
+3. Wybierz kolor gospodarza: białe, czarne lub losowo.
+4. Skopiuj link lub kod.
+5. Otwórz link w drugiej karcie **tej samej przeglądarki** albo ręcznie wpisz kod na stronie startowej.
+6. W drugiej karcie kliknij **Dołącz do pokoju**.
+7. Pierwsza karta gra wybranym kolorem, a druga przeciwnym. Każda osoba ma własne figury na dole planszy.
+8. Przetestuj ofertę remisu, poddanie i synchronizację ruchów między kartami.
 
 > Obecnie pokoje są demonstracją frontendową: używają `localStorage` i `BroadcastChannel`, więc działają tylko w obrębie tego samego profilu przeglądarki. W etapie z Flask i WebSocket synchronizacja zostanie przeniesiona na serwer i zacznie działać między różnymi urządzeniami.
 
@@ -35,6 +39,12 @@ Wymagany jest Node.js oraz npm.
 ```bash
 npm install
 npm run dev
+```
+
+Do jednorazowej kontroli produkcyjnej wersji aplikacji użyj:
+
+```bash
+npm run build
 ```
 
 Vite wyświetli w terminalu lokalny adres, zwykle `http://localhost:5173`.
