@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Chess } from 'chess.js';
 import './lobby.css';
+import './stage35.css';
 
 const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
 const ROOM_STORAGE_PREFIX = 'szachy:room:';
@@ -24,7 +25,39 @@ const pieceNames = {
 const promotionChoices = ['q', 'r', 'b', 'n'];
 
 function createInitialGameState() {
-  return { fen: new Chess().fen(), history: [] };
+  return {
+    fen: new Chess().fen(),
+    history: [],
+    drawOffer: null,
+    result: null,
+  };
+}
+
+function normalizeGameState(state) {
+  const initialState = createInitialGameState();
+
+  return {
+    fen: state?.fen || initialState.fen,
+    history: Array.isArray(state?.history) ? state.history : [],
+    drawOffer: state?.drawOffer || null,
+    result: state?.result || null,
+  };
+}
+
+function normalizeRoom(room) {
+  if (!room) {
+    return null;
+  }
+
+  const hostColor = room.hostColor === 'b' ? 'b' : 'w';
+
+  return {
+    ...room,
+    hostColor,
+    whitePlayer: typeof room.whitePlayer === 'boolean' ? room.whitePlayer : hostColor === 'w',
+    blackPlayer: typeof room.blackPlayer === 'boolean' ? room.blackPlayer : hostColor === 'b',
+    state: normalizeGameState(room.state),
+  };
 }
 
 function getSquareName(index) {
@@ -52,6 +85,12 @@ function generateRoomCode() {
   return Array.from(values, (value) => alphabet[value % alphabet.length]).join('');
 }
 
+function getRandomColor() {
+  const values = new Uint32Array(1);
+  window.crypto.getRandomValues(values);
+  return values[0] % 2 === 0 ? 'w' : 'b';
+}
+
 function getRoomStorageKey(code) {
   return `${ROOM_STORAGE_PREFIX}${code}`;
 }
@@ -63,7 +102,7 @@ function readRoom(code) {
 
   try {
     const rawRoom = window.localStorage.getItem(getRoomStorageKey(code));
-    return rawRoom ? JSON.parse(rawRoom) : null;
+    return rawRoom ? normalizeRoom(JSON.parse(rawRoom)) : null;
   } catch {
     return null;
   }
@@ -78,7 +117,23 @@ function loadSession() {
   }
 }
 
-function getGameStatus(game) {
+function getGameStatus(game, result = null) {
+  if (result?.type === 'resignation') {
+    return {
+      title: `Poddanie — wygrywają ${getColorLabel(result.winner)}`,
+      description: `${getColorLabel(result.resignedBy)} poddały partię.`,
+      ended: true,
+    };
+  }
+
+  if (result?.type === 'agreed-draw') {
+    return {
+      title: 'Remis uzgodniony',
+      description: 'Obaj gracze zgodzili się zakończyć partię remisem.',
+      ended: true,
+    };
+  }
+
   const sideToMove = getColorLabel(game.turn());
 
   if (game.isCheckmate()) {
@@ -125,7 +180,84 @@ function formatHistoryMove(entry) {
   return entry.color === 'w' ? `${entry.moveNumber}. ${entry.san}` : `${entry.moveNumber}... ${entry.san}`;
 }
 
-function HomeScreen({ joinCode, onJoinCodeChange, onCreateRoom, onJoinRoom, onStartLocalGame, joinError }) {
+function ConfirmDialog({ title, description, confirmLabel, confirmClassName = 'danger-action', onConfirm, onCancel }) {
+  return (
+    <div className="action-backdrop" role="presentation">
+      <section className="action-dialog" role="dialog" aria-modal="true" aria-labelledby="action-dialog-title">
+        <p className="panel-label">POTWIERDZENIE</p>
+        <h2 id="action-dialog-title">{title}</h2>
+        <p>{description}</p>
+        <div className="dialog-actions">
+          <button type="button" className="dialog-cancel" onClick={onCancel}>
+            Anuluj
+          </button>
+          <button type="button" className={confirmClassName} onClick={onConfirm}>
+            {confirmLabel}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function CreateRoomDialog({ selectedColor, onColorChange, onCreate, onCancel }) {
+  return (
+    <div className="action-backdrop" role="presentation">
+      <section className="action-dialog create-room-dialog" role="dialog" aria-modal="true" aria-labelledby="create-room-title">
+        <p className="panel-label">NOWY PRYWATNY POKÓJ</p>
+        <h2 id="create-room-title">Wybierz kolor</h2>
+        <p>Twoje figury będą ustawione na dole planszy. Drugi gracz automatycznie otrzyma przeciwny kolor.</p>
+
+        <div className="color-options" role="radiogroup" aria-label="Kolor gospodarza pokoju">
+          <button
+            className={`color-choice ${selectedColor === 'w' ? 'color-choice-selected' : ''}`}
+            type="button"
+            role="radio"
+            aria-checked={selectedColor === 'w'}
+            onClick={() => onColorChange('w')}
+          >
+            <span className="choice-piece choice-piece-white">♔</span>
+            <strong>Białe</strong>
+            <small>Zaczynasz partię</small>
+          </button>
+          <button
+            className={`color-choice ${selectedColor === 'b' ? 'color-choice-selected' : ''}`}
+            type="button"
+            role="radio"
+            aria-checked={selectedColor === 'b'}
+            onClick={() => onColorChange('b')}
+          >
+            <span className="choice-piece choice-piece-black">♚</span>
+            <strong>Czarne</strong>
+            <small>Drugi gracz zaczyna</small>
+          </button>
+          <button
+            className={`color-choice ${selectedColor === 'random' ? 'color-choice-selected' : ''}`}
+            type="button"
+            role="radio"
+            aria-checked={selectedColor === 'random'}
+            onClick={() => onColorChange('random')}
+          >
+            <span className="choice-piece">?</span>
+            <strong>Losowo</strong>
+            <small>Kolor zostanie wylosowany</small>
+          </button>
+        </div>
+
+        <div className="dialog-actions">
+          <button type="button" className="dialog-cancel" onClick={onCancel}>
+            Anuluj
+          </button>
+          <button type="button" className="primary-action" onClick={onCreate}>
+            Utwórz pokój
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function HomeScreen({ joinCode, onJoinCodeChange, onOpenCreateRoom, onJoinRoom, onStartLocalGame, joinError }) {
   function handleSubmit(event) {
     event.preventDefault();
     onJoinRoom();
@@ -139,7 +271,7 @@ function HomeScreen({ joinCode, onJoinCodeChange, onCreateRoom, onJoinRoom, onSt
           <p className="eyebrow">PROJEKT · APLIKACJE INTERNETOWE</p>
           <h1>Szachy online</h1>
         </div>
-        <span className="stage-badge">Etap 3: lobby i pokoje</span>
+        <span className="stage-badge">Etap 3.5: sterowanie partią</span>
       </header>
 
       <section className="hero-panel">
@@ -147,8 +279,8 @@ function HomeScreen({ joinCode, onJoinCodeChange, onCreateRoom, onJoinRoom, onSt
           <p className="hero-kicker">ZAGRAJ OD RAZU</p>
           <h2>Wybierz sposób rozpoczęcia partii</h2>
           <p>
-            Możesz zagrać na jednym urządzeniu albo utworzyć prywatny pokój i przekazać jego kod drugiemu
-            graczowi.
+            Możesz zagrać na jednym urządzeniu albo utworzyć prywatny pokój, wybrać kolor i przekazać kod
+            przeciwnikowi.
           </p>
         </div>
         <div className="hero-board-preview" aria-hidden="true">
@@ -172,8 +304,8 @@ function HomeScreen({ joinCode, onJoinCodeChange, onCreateRoom, onJoinRoom, onSt
         <article className="lobby-card">
           <span className="lobby-card-icon">＋</span>
           <h2>Utwórz prywatny pokój</h2>
-          <p>Otrzymasz sześcioliterowy kod i link, który można przekazać przeciwnikowi.</p>
-          <button type="button" className="secondary-action" onClick={onCreateRoom}>
+          <p>Wybierz białe, czarne albo losowy kolor. Otrzymasz sześcioliterowy kod oraz link.</p>
+          <button type="button" className="secondary-action" onClick={onOpenCreateRoom}>
             Utwórz pokój
           </button>
         </article>
@@ -181,7 +313,7 @@ function HomeScreen({ joinCode, onJoinCodeChange, onCreateRoom, onJoinRoom, onSt
         <article className="lobby-card">
           <span className="lobby-card-icon">⌁</span>
           <h2>Dołącz kodem</h2>
-          <p>Wpisz kod utworzony przez drugiego gracza, aby zająć stronę czarnych.</p>
+          <p>Wpisz kod utworzony przez drugiego gracza, aby otrzymać wolny kolor w pokoju.</p>
           <form className="join-form" onSubmit={handleSubmit}>
             <label htmlFor="room-code">Kod pokoju</label>
             <input
@@ -210,8 +342,17 @@ function HomeScreen({ joinCode, onJoinCodeChange, onCreateRoom, onJoinRoom, onSt
 
 function RoomLobby({ room, playerColor, onCopyCode, onCopyLink, copiedMessage, onContinue, onLeaveRoom }) {
   const isWaiting = room.status === 'waiting';
-  const isWhitePlayer = playerColor === 'w';
   const roomLink = `${window.location.origin}${window.location.pathname}?room=${room.code}`;
+  const whiteOccupied = room.whitePlayer;
+  const blackOccupied = room.blackPlayer;
+
+  function playerDescription(color, occupied) {
+    if (playerColor === color) {
+      return 'Ty';
+    }
+
+    return occupied ? 'Drugi gracz' : 'Oczekuje na gracza';
+  }
 
   return (
     <main className="lobby-shell room-lobby-shell">
@@ -222,7 +363,7 @@ function RoomLobby({ room, playerColor, onCopyCode, onCopyLink, copiedMessage, o
           <h1>Pokój {room.code}</h1>
         </div>
         <button type="button" className="text-button" onClick={onLeaveRoom}>
-          Opuść pokój
+          Menu główne
         </button>
       </header>
 
@@ -241,8 +382,8 @@ function RoomLobby({ room, playerColor, onCopyCode, onCopyLink, copiedMessage, o
           </h2>
           <p>
             {isWaiting
-              ? 'Gdy drugi gracz dołączy jako czarne, aplikacja automatycznie przejdzie do planszy.'
-              : `Grasz po stronie: ${getColorLabel(playerColor)}.`}
+              ? 'Gdy drugi gracz dołączy, aplikacja automatycznie przejdzie do planszy.'
+              : `Grasz po stronie: ${getColorLabel(playerColor)}. Twoje figury będą na dole planszy.`}
           </p>
         </div>
       </section>
@@ -272,17 +413,17 @@ function RoomLobby({ room, playerColor, onCopyCode, onCopyLink, copiedMessage, o
           <span>♔</span>
           <div>
             <strong>Białe</strong>
-            <small>{isWhitePlayer ? 'Ty' : 'Drugi gracz'}</small>
+            <small>{playerDescription('w', whiteOccupied)}</small>
           </div>
-          <em className="player-ready">Gotowy</em>
+          <em className={whiteOccupied ? 'player-ready' : 'player-waiting'}>{whiteOccupied ? 'Gotowy' : 'Oczekuje'}</em>
         </div>
         <div className="room-player room-player-black">
           <span>♚</span>
           <div>
             <strong>Czarne</strong>
-            <small>{isWhitePlayer ? 'Drugi gracz' : 'Ty'}</small>
+            <small>{playerDescription('b', blackOccupied)}</small>
           </div>
-          <em className={room.blackPlayer ? 'player-ready' : 'player-waiting'}>{room.blackPlayer ? 'Gotowy' : 'Oczekuje'}</em>
+          <em className={blackOccupied ? 'player-ready' : 'player-waiting'}>{blackOccupied ? 'Gotowy' : 'Oczekuje'}</em>
         </div>
       </section>
 
@@ -295,21 +436,25 @@ function RoomLobby({ room, playerColor, onCopyCode, onCopyLink, copiedMessage, o
       {isWaiting && (
         <p className="front-end-note">
           Aby przetestować synchronizację, otwórz skopiowany link w nowej karcie tej samej przeglądarki i dołącz do
-          pokoju jako czarne.
+          pokoju. Kolor otrzymasz automatycznie.
         </p>
       )}
     </main>
   );
 }
 
-function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBackToLobby }) {
+function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBackToLobby, onReturnHome }) {
   const [selectedSquare, setSelectedSquare] = useState(null);
   const [draggedSquare, setDraggedSquare] = useState(null);
   const [viewedMoveIndex, setViewedMoveIndex] = useState(null);
   const [promotionRequest, setPromotionRequest] = useState(null);
+  const [pendingAction, setPendingAction] = useState(null);
 
-  const game = useMemo(() => new Chess(gameState.fen), [gameState.fen]);
-  const history = gameState.history;
+  const state = normalizeGameState(gameState);
+  const game = useMemo(() => new Chess(state.fen), [state.fen]);
+  const history = state.history;
+  const result = state.result;
+  const drawOffer = state.drawOffer;
   const isHistoryPreview = viewedMoveIndex !== null;
   const displayedGame = useMemo(() => {
     if (!isHistoryPreview) {
@@ -320,9 +465,18 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
   }, [game, history, isHistoryPreview, viewedMoveIndex]);
 
   const displayedMove = isHistoryPreview ? history[viewedMoveIndex] : history[history.length - 1];
-  const liveStatus = getGameStatus(game);
+  const liveStatus = getGameStatus(game, result);
   const isPlayerTurn = mode === 'local' || game.turn() === playerColor;
   const interactionLocked = isHistoryPreview || liveStatus.ended || !isPlayerTurn;
+  const actionColor = mode === 'local' ? game.turn() : playerColor;
+  const canRespondToDraw = Boolean(drawOffer && drawOffer !== actionColor && !liveStatus.ended);
+  const canStartNewGame = mode === 'local' || liveStatus.ended;
+  const boardOrientation = mode === 'room' ? playerColor : 'w';
+
+  const boardIndexes = useMemo(
+    () => Array.from({ length: 64 }, (_, visualIndex) => (boardOrientation === 'b' ? 63 - visualIndex : visualIndex)),
+    [boardOrientation],
+  );
 
   const legalTargets = useMemo(() => {
     if (!selectedSquare || interactionLocked) {
@@ -336,14 +490,22 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
     setSelectedSquare(null);
     setDraggedSquare(null);
     setPromotionRequest(null);
-  }, [gameState.fen]);
+  }, [state.fen]);
 
   function clearSelection() {
     setSelectedSquare(null);
     setDraggedSquare(null);
   }
 
+  function replaceGameState(partialState) {
+    onGameStateChange({ ...state, ...partialState });
+  }
+
   function startNewGame() {
+    if (!canStartNewGame) {
+      return;
+    }
+
     setViewedMoveIndex(null);
     setPromotionRequest(null);
     clearSelection();
@@ -389,7 +551,11 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
       setViewedMoveIndex(null);
       setPromotionRequest(null);
       clearSelection();
-      onGameStateChange({ fen: nextGame.fen(), history: [...history, nextEntry] });
+      onGameStateChange({
+        ...state,
+        fen: nextGame.fen(),
+        history: [...history, nextEntry],
+      });
     } catch {
       clearSelection();
     }
@@ -472,9 +638,45 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
     clearSelection();
   }
 
+  function offerDraw() {
+    if (liveStatus.ended || drawOffer) {
+      return;
+    }
+
+    replaceGameState({ drawOffer: actionColor });
+  }
+
+  function acceptDraw() {
+    replaceGameState({
+      drawOffer: null,
+      result: { type: 'agreed-draw' },
+    });
+  }
+
+  function declineDraw() {
+    replaceGameState({ drawOffer: null });
+  }
+
+  function resignGame() {
+    if (liveStatus.ended) {
+      return;
+    }
+
+    replaceGameState({
+      drawOffer: null,
+      result: {
+        type: 'resignation',
+        resignedBy: actionColor,
+        winner: actionColor === 'w' ? 'b' : 'w',
+      },
+    });
+    setPendingAction(null);
+  }
+
   const whiteName = mode === 'local' ? 'Gracz biały' : playerColor === 'w' ? 'Ty — białe' : 'Gracz biały';
   const blackName = mode === 'local' ? 'Gracz czarny' : playerColor === 'b' ? 'Ty — czarne' : 'Gracz czarny';
   const gameModeLabel = mode === 'local' ? 'Gra lokalna' : `Pokój ${room.code}`;
+  const offeredByLabel = drawOffer ? getColorLabel(drawOffer).toLowerCase() : '';
 
   return (
     <main className="app-shell">
@@ -485,8 +687,13 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
         </div>
         <div className="game-topbar-actions">
           {mode === 'room' && <span className="room-code-pill">Kod: {room.code}</span>}
-          <button type="button" className="text-button" onClick={onBackToLobby}>
-            {mode === 'room' ? '← Wróć do pokoju' : '← Wróć do menu'}
+          {mode === 'room' && (
+            <button type="button" className="text-button" onClick={onBackToLobby}>
+              ← Pokój
+            </button>
+          )}
+          <button type="button" className="text-button" onClick={() => setPendingAction('menu')}>
+            Menu główne
           </button>
         </div>
       </header>
@@ -514,12 +721,14 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
 
           <div className="board-frame">
             <div className={`chessboard ${interactionLocked ? 'chessboard-readonly' : ''}`} role="grid" aria-label="Szachownica">
-              {Array.from({ length: 64 }, (_, index) => {
-                const row = Math.floor(index / 8);
-                const column = index % 8;
+              {boardIndexes.map((index, visualIndex) => {
+                const visualRow = Math.floor(visualIndex / 8);
+                const visualColumn = visualIndex % 8;
+                const boardRow = Math.floor(index / 8);
+                const boardColumn = index % 8;
                 const square = getSquareName(index);
                 const piece = displayedGame.get(square);
-                const isLightSquare = (row + column) % 2 === 0;
+                const isLightSquare = (boardRow + boardColumn) % 2 === 0;
                 const isSelected = !isHistoryPreview && selectedSquare === square;
                 const isLegalTarget = !isHistoryPreview && legalTargets.includes(square);
                 const isCaptureTarget = isLegalTarget && Boolean(game.get(square));
@@ -542,8 +751,8 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
                     }}
                     onDrop={(event) => handleDrop(event, square)}
                   >
-                    {column === 0 && <span className="rank-label">{8 - row}</span>}
-                    {row === 7 && <span className="file-label">{files[column]}</span>}
+                    {visualColumn === 0 && <span className="rank-label">{square[1]}</span>}
+                    {visualRow === 7 && <span className="file-label">{square[0]}</span>}
                     {piece && (
                       <span
                         className={`piece piece-${piece.color === 'w' ? 'white' : 'black'}`}
@@ -586,6 +795,26 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
             </p>
           </section>
 
+          {canRespondToDraw && (
+            <section className="draw-offer-card" aria-live="polite">
+              <p className="panel-label">OFERTA REMISU</p>
+              <h2>{getColorLabel(drawOffer)} proponują remis</h2>
+              <p>Zaakceptowanie oferty zakończy partię remisem.</p>
+              <div className="draw-offer-actions">
+                <button type="button" className="secondary-action" onClick={declineDraw}>Odrzuć</button>
+                <button type="button" className="primary-action" onClick={acceptDraw}>Akceptuj remis</button>
+              </div>
+            </section>
+          )}
+
+          {drawOffer && !canRespondToDraw && !liveStatus.ended && (
+            <section className="draw-offer-card draw-offer-sent" aria-live="polite">
+              <p className="panel-label">OFERTA REMISU</p>
+              <h2>Oferta została wysłana</h2>
+              <p>Oczekujesz na decyzję gracza po stronie {offeredByLabel}.</p>
+            </section>
+          )}
+
           <section className="moves-card">
             <div className="card-heading">
               <h2>Historia ruchów</h2>
@@ -612,7 +841,35 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
             )}
           </section>
 
-          <button className="reset-button" type="button" onClick={startNewGame}>Rozpocznij nową partię</button>
+          <section className="game-actions-card">
+            <p className="panel-label">DZIAŁANIA W PARTII</p>
+            <button
+              className="secondary-action"
+              type="button"
+              onClick={offerDraw}
+              disabled={liveStatus.ended || Boolean(drawOffer)}
+            >
+              {drawOffer === actionColor ? 'Oferta remisu wysłana' : 'Zaproponuj remis'}
+            </button>
+            <button
+              className="danger-action"
+              type="button"
+              onClick={() => setPendingAction('resign')}
+              disabled={liveStatus.ended}
+            >
+              Poddaj partię
+            </button>
+            <button className="menu-action" type="button" onClick={() => setPendingAction('menu')}>
+              Wróć do menu głównego
+            </button>
+          </section>
+
+          {canStartNewGame && (
+            <button className="reset-button" type="button" onClick={startNewGame}>
+              Rozpocznij nową partię
+            </button>
+          )}
+
           <p className="demo-note">
             Zasady ruchów, szach, mat, pat, roszada, bicie w przelocie i promocja pionka są sprawdzane przez
             silnik reguł szachowych. Kliknięcie ruchu w historii pokazuje pozycję dokładnie po tym ruchu.
@@ -642,6 +899,27 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
           </section>
         </div>
       )}
+
+      {pendingAction === 'resign' && (
+        <ConfirmDialog
+          title="Czy na pewno chcesz się poddać?"
+          description="Partia zostanie od razu zakończona, a zwycięstwo otrzyma przeciwnik."
+          confirmLabel="Poddaj partię"
+          onConfirm={resignGame}
+          onCancel={() => setPendingAction(null)}
+        />
+      )}
+
+      {pendingAction === 'menu' && (
+        <ConfirmDialog
+          title="Wrócić do menu głównego?"
+          description={mode === 'room' ? 'Opuścisz bieżący pokój w tej karcie. Pokój i jego aktualna pozycja pozostaną dostępne dla drugiego gracza.' : 'Bieżąca lokalna partia zostanie zamknięta.'}
+          confirmLabel="Wróć do menu"
+          confirmClassName="primary-action"
+          onConfirm={onReturnHome}
+          onCancel={() => setPendingAction(null)}
+        />
+      )}
     </main>
   );
 }
@@ -658,6 +936,8 @@ export default function App() {
   const [joinCode, setJoinCode] = useState(roomFromUrl);
   const [joinError, setJoinError] = useState('');
   const [copiedMessage, setCopiedMessage] = useState('');
+  const [createRoomOpen, setCreateRoomOpen] = useState(false);
+  const [selectedHostColor, setSelectedHostColor] = useState('w');
   const channelRef = useRef(null);
 
   useEffect(() => {
@@ -703,6 +983,7 @@ export default function App() {
 
   function saveSession(nextSession) {
     setSession(nextSession);
+
     try {
       if (nextSession) {
         window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(nextSession));
@@ -715,13 +996,16 @@ export default function App() {
   }
 
   function persistRoom(nextRoom) {
+    const normalizedRoom = normalizeRoom(nextRoom);
+
     try {
-      window.localStorage.setItem(getRoomStorageKey(nextRoom.code), JSON.stringify(nextRoom));
-      channelRef.current?.postMessage({ type: 'room-updated', code: nextRoom.code });
+      window.localStorage.setItem(getRoomStorageKey(normalizedRoom.code), JSON.stringify(normalizedRoom));
+      channelRef.current?.postMessage({ type: 'room-updated', code: normalizedRoom.code });
     } catch {
       // Stan nadal pozostaje widoczny w bieżącej karcie.
     }
-    setRoom(nextRoom);
+
+    setRoom(normalizedRoom);
   }
 
   function createRoom() {
@@ -730,19 +1014,22 @@ export default function App() {
       code = generateRoomCode();
     }
 
+    const hostColor = selectedHostColor === 'random' ? getRandomColor() : selectedHostColor;
     const nextRoom = {
       code,
       status: 'waiting',
-      whitePlayer: true,
-      blackPlayer: false,
+      hostColor,
+      whitePlayer: hostColor === 'w',
+      blackPlayer: hostColor === 'b',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       state: createInitialGameState(),
     };
 
-    saveSession({ code, color: 'w' });
+    saveSession({ code, color: hostColor });
     persistRoom(nextRoom);
     setCopiedMessage('');
+    setCreateRoomOpen(false);
     setScreen('lobby');
   }
 
@@ -761,24 +1048,27 @@ export default function App() {
       return;
     }
 
-    if (foundRoom.blackPlayer) {
-      setJoinError('Ten pokój jest już pełny.');
+    if (foundRoom.status === 'completed') {
+      setJoinError('Ta partia została już zakończona.');
       return;
     }
 
-    if (foundRoom.status === 'completed') {
-      setJoinError('Ta partia została już zakończona.');
+    const guestColor = foundRoom.hostColor === 'w' ? 'b' : 'w';
+    const guestSpotTaken = guestColor === 'w' ? foundRoom.whitePlayer : foundRoom.blackPlayer;
+    if (guestSpotTaken) {
+      setJoinError('Ten pokój jest już pełny.');
       return;
     }
 
     const joinedRoom = {
       ...foundRoom,
       status: 'active',
-      blackPlayer: true,
+      whitePlayer: guestColor === 'w' ? true : foundRoom.whitePlayer,
+      blackPlayer: guestColor === 'b' ? true : foundRoom.blackPlayer,
       updatedAt: new Date().toISOString(),
     };
 
-    saveSession({ code, color: 'b' });
+    saveSession({ code, color: guestColor });
     persistRoom(joinedRoom);
     setScreen('game');
   }
@@ -795,12 +1085,13 @@ export default function App() {
       return;
     }
 
-    const nextGame = new Chess(nextState.fen);
+    const normalizedState = normalizeGameState(nextState);
+    const nextGame = new Chess(normalizedState.fen);
     const nextRoom = {
       ...room,
-      status: getGameStatus(nextGame).ended ? 'completed' : 'active',
+      status: getGameStatus(nextGame, normalizedState.result).ended ? 'completed' : 'active',
       updatedAt: new Date().toISOString(),
-      state: nextState,
+      state: normalizedState,
     };
 
     persistRoom(nextRoom);
@@ -815,26 +1106,37 @@ export default function App() {
     }
   }
 
-  function leaveRoom() {
+  function returnToHome() {
     saveSession(null);
     setRoom(null);
     setScreen('home');
     setCopiedMessage('');
+    setJoinError('');
   }
 
   if (screen === 'home') {
     return (
-      <HomeScreen
-        joinCode={joinCode}
-        onJoinCodeChange={(nextCode) => {
-          setJoinCode(nextCode);
-          setJoinError('');
-        }}
-        onCreateRoom={createRoom}
-        onJoinRoom={joinRoom}
-        onStartLocalGame={startLocalGame}
-        joinError={joinError}
-      />
+      <>
+        <HomeScreen
+          joinCode={joinCode}
+          onJoinCodeChange={(nextCode) => {
+            setJoinCode(nextCode);
+            setJoinError('');
+          }}
+          onOpenCreateRoom={() => setCreateRoomOpen(true)}
+          onJoinRoom={joinRoom}
+          onStartLocalGame={startLocalGame}
+          joinError={joinError}
+        />
+        {createRoomOpen && (
+          <CreateRoomDialog
+            selectedColor={selectedHostColor}
+            onColorChange={setSelectedHostColor}
+            onCreate={createRoom}
+            onCancel={() => setCreateRoomOpen(false)}
+          />
+        )}
+      </>
     );
   }
 
@@ -847,12 +1149,13 @@ export default function App() {
         onCopyLink={() => copyText(`${window.location.origin}${window.location.pathname}?room=${room.code}`, 'Link do pokoju skopiowano do schowka.')}
         copiedMessage={copiedMessage}
         onContinue={() => setScreen('game')}
-        onLeaveRoom={leaveRoom}
+        onLeaveRoom={returnToHome}
       />
     );
   }
 
   const isRoomGame = Boolean(room && session);
+
   return (
     <ChessGame
       mode={isRoomGame ? 'room' : 'local'}
@@ -863,10 +1166,9 @@ export default function App() {
       onBackToLobby={() => {
         if (isRoomGame) {
           setScreen('lobby');
-        } else {
-          setScreen('home');
         }
       }}
+      onReturnHome={returnToHome}
     />
   );
 }
