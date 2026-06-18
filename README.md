@@ -21,6 +21,36 @@ Projekt na przedmiot **Aplikacje internetowe**. Aplikacja jest rozwijana etapami
 
 Reguły gry obsługuje biblioteka `chess.js`. Pozycja po każdym ruchu jest zapisywana jako FEN, dzięki czemu wpis historii odtwarza dokładny stan planszy z danego momentu.
 
+## Struktura projektu
+
+```text
+src/
+├── App.jsx                         # przełączanie ekranów, sesja i zapis pokoju
+├── domain/
+│   ├── chess.js                    # stan partii, status, FEN, opisy figur
+│   └── room.js                     # kod pokoju, localStorage, sesja i link pokoju
+├── hooks/
+│   └── useRoomSync.js              # synchronizacja kart przez BroadcastChannel
+├── components/
+│   ├── common/
+│   │   ├── ConfirmDialog.jsx       # uniwersalne okno potwierdzenia
+│   │   └── CreateRoomDialog.jsx    # wybór koloru przy tworzeniu pokoju
+│   ├── lobby/
+│   │   ├── HomeScreen.jsx          # menu główne
+│   │   └── RoomLobby.jsx           # oczekiwanie i dane prywatnego pokoju
+│   └── game/
+│       ├── ChessGame.jsx           # stan i akcje bieżącej rozgrywki
+│       ├── ChessBoard.jsx          # renderowanie oraz interakcja z planszą
+│       ├── GameSidebar.jsx         # status, historia, remis i poddanie
+│       └── PromotionDialog.jsx     # wybór figury po promocji pionka
+├── styles.css                      # ogólny układ szachownicy i aplikacji
+├── lobby.css                       # widoki lobby i pokoi
+├── stage35.css                     # dialogi oraz działania w partii
+└── stage36.css                     # komunikaty pokojów
+```
+
+`App.jsx` nie zawiera już reguł gry ani JSX planszy. Przy wdrażaniu backendu kod Flask/WebSocket będzie zastępował funkcje z `domain/room.js` oraz `hooks/useRoomSync.js`; komponenty UI pozostaną bez zmian albo z niewielkimi korektami.
+
 ## Jak przetestować prywatny pokój
 
 1. Uruchom aplikację przez `npm run dev`.
