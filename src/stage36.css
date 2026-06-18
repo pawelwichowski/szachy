@@ -1,0 +1,58 @@
+.game-event-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  border: 1px solid #c9d8ec;
+  border-radius: 16px;
+  padding: 18px 18px 17px;
+  color: #28405e;
+  background: #eef5ff;
+  box-shadow: 0 8px 24px rgba(27, 39, 64, 0.05);
+}
+
+.game-event-card h2 {
+  margin: 0 0 5px;
+  color: #2d4d74;
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
+}
+
+.game-event-card p:not(.panel-label) {
+  margin: 0;
+  color: #61748d;
+  font-size: 0.87rem;
+  line-height: 1.45;
+}
+
+.game-event-card .panel-label {
+  margin-bottom: 5px;
+  color: #55769f;
+}
+
+.game-event-card button {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  color: #45658d;
+  background: #dbe9fa;
+  cursor: pointer;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.game-event-card button:hover {
+  color: #ffffff;
+  background: #5478a7;
+}
+
+@media (max-width: 560px) {
+  .game-event-card {
+    padding: 15px;
+  }
+}
