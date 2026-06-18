@@ -8,22 +8,8 @@ const SESSION_STORAGE_KEY = 'szachy:session';
 const CHANNEL_NAME = 'szachy:rooms';
 
 const pieceSymbols = {
-  w: {
-    k: '♔',
-    q: '♕',
-    r: '♖',
-    b: '♗',
-    n: '♘',
-    p: '♙',
-  },
-  b: {
-    k: '♚',
-    q: '♛',
-    r: '♜',
-    b: '♝',
-    n: '♞',
-    p: '♟',
-  },
+  w: { k: '♔', q: '♕', r: '♖', b: '♗', n: '♘', p: '♙' },
+  b: { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' },
 };
 
 const pieceNames = {
@@ -38,10 +24,7 @@ const pieceNames = {
 const promotionChoices = ['q', 'r', 'b', 'n'];
 
 function createInitialGameState() {
-  return {
-    fen: new Chess().fen(),
-    history: [],
-  };
+  return { fen: new Chess().fen(), history: [] };
 }
 
 function getSquareName(index) {
@@ -66,7 +49,6 @@ function generateRoomCode() {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   const values = new Uint32Array(6);
   window.crypto.getRandomValues(values);
-
   return Array.from(values, (value) => alphabet[value % alphabet.length]).join('');
 }
 
@@ -292,7 +274,7 @@ function RoomLobby({ room, playerColor, onCopyCode, onCopyLink, copiedMessage, o
             <strong>Białe</strong>
             <small>{isWhitePlayer ? 'Ty' : 'Drugi gracz'}</small>
           </div>
-          <em>Gotowy</em>
+          <em className="player-ready">Gotowy</em>
         </div>
         <div className="room-player room-player-black">
           <span>♚</span>
@@ -300,7 +282,7 @@ function RoomLobby({ room, playerColor, onCopyCode, onCopyLink, copiedMessage, o
             <strong>Czarne</strong>
             <small>{isWhitePlayer ? 'Drugi gracz' : 'Ty'}</small>
           </div>
-          <em>{room.blackPlayer ? 'Gotowy' : 'Oczekuje'}</em>
+          <em className={room.blackPlayer ? 'player-ready' : 'player-waiting'}>{room.blackPlayer ? 'Gotowy' : 'Oczekuje'}</em>
         </div>
       </section>
 
@@ -374,7 +356,6 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
     }
 
     const piece = game.get(square);
-
     if (piece?.color === game.turn()) {
       setSelectedSquare(square);
     }
@@ -389,7 +370,6 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
 
     try {
       const move = nextGame.move({ from, to, promotion });
-
       if (!move) {
         return;
       }
@@ -409,10 +389,7 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
       setViewedMoveIndex(null);
       setPromotionRequest(null);
       clearSelection();
-      onGameStateChange({
-        fen: nextGame.fen(),
-        history: [...history, nextEntry],
-      });
+      onGameStateChange({ fen: nextGame.fen(), history: [...history, nextEntry] });
     } catch {
       clearSelection();
     }
@@ -420,13 +397,11 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
 
   function requestMove(from, to) {
     const movingPiece = game.get(from);
-
     if (!movingPiece || movingPiece.color !== game.turn() || from === to || interactionLocked) {
       return;
     }
 
     const reachesPromotionRank = movingPiece.type === 'p' && (to.endsWith('1') || to.endsWith('8'));
-
     if (reachesPromotionRank) {
       setPromotionRequest({ from, to, color: movingPiece.color });
       return;
@@ -441,7 +416,6 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
     }
 
     const piece = game.get(square);
-
     if (!selectedSquare) {
       selectSquare(square);
       return;
@@ -462,7 +436,6 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
 
   function handleDragStart(event, square) {
     const piece = game.get(square);
-
     if (interactionLocked || !piece || piece.color !== game.turn()) {
       event.preventDefault();
       return;
@@ -476,13 +449,11 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
 
   function handleDrop(event, targetSquare) {
     event.preventDefault();
-
     if (interactionLocked) {
       return;
     }
 
     const sourceSquare = draggedSquare || event.dataTransfer.getData('text/plain');
-
     if (sourceSquare && sourceSquare !== targetSquare) {
       requestMove(sourceSquare, targetSquare);
     }
@@ -537,9 +508,7 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
                 <strong>Podgląd pozycji po ruchu: {formatHistoryMove(history[viewedMoveIndex])}</strong>
                 <span>Plansza jest tylko do odczytu.</span>
               </div>
-              <button type="button" onClick={returnToLivePosition}>
-                Wróć do bieżącej pozycji
-              </button>
+              <button type="button" onClick={returnToLivePosition}>Wróć do bieżącej pozycji</button>
             </div>
           )}
 
@@ -558,11 +527,9 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
 
                 return (
                   <button
-                    className={`square ${isLightSquare ? 'square-light' : 'square-dark'} ${
-                      isSelected ? 'square-selected' : ''
-                    } ${isLastMove ? 'square-last-move' : ''} ${isLegalTarget ? 'square-legal' : ''} ${
-                      isCaptureTarget ? 'square-legal-capture' : ''
-                    }`}
+                    className={`square ${isLightSquare ? 'square-light' : 'square-dark'} ${isSelected ? 'square-selected' : ''} ${
+                      isLastMove ? 'square-last-move' : ''
+                    } ${isLegalTarget ? 'square-legal' : ''} ${isCaptureTarget ? 'square-legal-capture' : ''}`}
                     key={square}
                     type="button"
                     role="gridcell"
@@ -645,10 +612,7 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
             )}
           </section>
 
-          <button className="reset-button" type="button" onClick={startNewGame}>
-            Rozpocznij nową partię
-          </button>
-
+          <button className="reset-button" type="button" onClick={startNewGame}>Rozpocznij nową partię</button>
           <p className="demo-note">
             Zasady ruchów, szach, mat, pat, roszada, bicie w przelocie i promocja pionka są sprawdzane przez
             silnik reguł szachowych. Kliknięcie ruchu w historii pokazuje pozycję dokładnie po tym ruchu.
@@ -674,9 +638,7 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
                 </button>
               ))}
             </div>
-            <button className="promotion-cancel" type="button" onClick={() => setPromotionRequest(null)}>
-              Anuluj ruch
-            </button>
+            <button className="promotion-cancel" type="button" onClick={() => setPromotionRequest(null)}>Anuluj ruch</button>
           </section>
         </div>
       )}
@@ -685,9 +647,9 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
 }
 
 export default function App() {
-  const initialSession = loadSession();
-  const initialRoom = initialSession?.code ? readRoom(initialSession.code) : null;
   const roomFromUrl = normalizeRoomCode(new URLSearchParams(window.location.search).get('room') || '');
+  const initialSession = roomFromUrl ? null : loadSession();
+  const initialRoom = initialSession?.code ? readRoom(initialSession.code) : null;
 
   const [session, setSession] = useState(initialRoom ? initialSession : null);
   const [room, setRoom] = useState(initialRoom);
@@ -726,7 +688,6 @@ export default function App() {
     };
 
     window.addEventListener('storage', handleStorage);
-
     return () => {
       window.removeEventListener('storage', handleStorage);
       channel.close();
@@ -742,7 +703,6 @@ export default function App() {
 
   function saveSession(nextSession) {
     setSession(nextSession);
-
     try {
       if (nextSession) {
         window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(nextSession));
@@ -761,13 +721,11 @@ export default function App() {
     } catch {
       // Stan nadal pozostaje widoczny w bieżącej karcie.
     }
-
     setRoom(nextRoom);
   }
 
   function createRoom() {
     let code = generateRoomCode();
-
     while (readRoom(code)) {
       code = generateRoomCode();
     }
@@ -798,7 +756,6 @@ export default function App() {
     }
 
     const foundRoom = readRoom(code);
-
     if (!foundRoom) {
       setJoinError('Nie znaleziono pokoju o takim kodzie.');
       return;
@@ -896,7 +853,6 @@ export default function App() {
   }
 
   const isRoomGame = Boolean(room && session);
-
   return (
     <ChessGame
       mode={isRoomGame ? 'room' : 'local'}
