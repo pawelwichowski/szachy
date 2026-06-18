@@ -44,3 +44,57 @@
 .connection-notice button:hover {
   background: #ffffff;
 }
+
+.room-connection-shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.room-connection-card {
+  width: min(100%, 540px);
+  border: 1px solid #d8e1ec;
+  border-radius: 18px;
+  padding: 38px;
+  color: #31405a;
+  background: #ffffff;
+  box-shadow: 0 16px 40px rgba(29, 45, 70, 0.1);
+  text-align: center;
+}
+
+.room-connection-icon {
+  display: grid;
+  width: 54px;
+  height: 54px;
+  place-items: center;
+  margin: 0 auto 17px;
+  border-radius: 15px;
+  color: #ffffff;
+  background: #304563;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 2.1rem;
+}
+
+.room-connection-card h1 {
+  margin: 5px 0 10px;
+  color: #2a3951;
+  font-size: clamp(1.45rem, 4vw, 2rem);
+}
+
+.room-connection-card > p:last-of-type {
+  margin: 0 auto;
+  color: #69768b;
+  line-height: 1.55;
+}
+
+.room-connection-card .primary-action {
+  margin-top: 23px;
+}
+
+@media (max-width: 560px) {
+  .room-connection-card {
+    padding: 27px 22px;
+  }
+}
