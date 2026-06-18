@@ -1,4 +1,4 @@
 Flask>=3.0,<4.0
-Flask-SocketIO>=5.3,<6.0
+flask-sock>=0.7,<1.0
 simple-websocket>=1.1,<2.0
 chess>=1.11,<2.0

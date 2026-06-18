@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Chess } from 'chess.js';
 import {
-  createGameEvent,
   createInitialGameState,
   formatHistoryMove,
-  getColorLabel,
   getGameStatus,
   normalizeGameState,
 } from '../../domain/chess';
@@ -13,7 +11,16 @@ import ChessBoard from './ChessBoard';
 import GameSidebar from './GameSidebar';
 import PromotionDialog from './PromotionDialog';
 
-export default function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBackToLobby, onReturnHome }) {
+export default function ChessGame({
+  mode,
+  room,
+  playerColor,
+  gameState,
+  onLocalGameStateChange,
+  roomActions,
+  onBackToLobby,
+  onReturnHome,
+}) {
   const [selectedSquare, setSelectedSquare] = useState(null);
   const [draggedSquare, setDraggedSquare] = useState(null);
   const [viewedMoveIndex, setViewedMoveIndex] = useState(null);
@@ -69,20 +76,24 @@ export default function ChessGame({ mode, room, playerColor, gameState, onGameSt
     setDraggedSquare(null);
   }
 
-  function replaceGameState(partialState) {
-    onGameStateChange({ ...state, ...partialState });
-  }
-
   function startNewLocalGame() {
     setViewedMoveIndex(null);
     setPromotionRequest(null);
     setDismissedEventId(null);
     clearSelection();
-    onGameStateChange(createInitialGameState());
+    onLocalGameStateChange(createInitialGameState());
   }
 
   function completeMove({ from, to, promotion }) {
     if (interactionLocked) {
+      return;
+    }
+
+    if (mode === 'room') {
+      roomActions?.makeMove({ from, to, promotion });
+      setViewedMoveIndex(null);
+      setPromotionRequest(null);
+      clearSelection();
       return;
     }
 
@@ -106,17 +117,13 @@ export default function ChessGame({ mode, room, playerColor, gameState, onGameSt
         fen: nextGame.fen(),
       };
 
-      const drawDeclinedByMove = mode === 'room' && state.drawOffer && state.drawOffer !== move.color;
-
       setViewedMoveIndex(null);
       setPromotionRequest(null);
       clearSelection();
-      onGameStateChange({
+      onLocalGameStateChange({
         ...state,
         fen: nextGame.fen(),
         history: [...history, nextEntry],
-        drawOffer: drawDeclinedByMove ? null : state.drawOffer,
-        lastEvent: drawDeclinedByMove ? createGameEvent('draw-declined', move.color) : null,
       });
     } catch {
       clearSelection();
@@ -192,51 +199,9 @@ export default function ChessGame({ mode, room, playerColor, gameState, onGameSt
     setDraggedSquare(null);
   }
 
-  function offerDraw() {
-    if (canOfferDraw) {
-      replaceGameState({ drawOffer: actionColor, lastEvent: null });
-    }
-  }
-
-  function acceptDraw() {
-    replaceGameState({
-      drawOffer: null,
-      result: { type: 'agreed-draw' },
-      lastEvent: null,
-    });
-  }
-
-  function declineDraw() {
-    replaceGameState({
-      drawOffer: null,
-      lastEvent: createGameEvent('draw-declined', actionColor),
-    });
-  }
-
-  function resignGame() {
-    if (liveStatus.ended) {
-      return;
-    }
-
-    replaceGameState({
-      drawOffer: null,
-      lastEvent: null,
-      result: {
-        type: 'resignation',
-        resignedBy: actionColor,
-        winner: actionColor === 'w' ? 'b' : 'w',
-      },
-    });
-    setPendingAction(null);
-  }
-
   function returnToHomeFromGame() {
     setPendingAction(null);
-    onReturnHome({
-      shouldNotifyOpponent: mode === 'room' && !liveStatus.ended,
-      gameState: state,
-      playerColor: actionColor,
-    });
+    onReturnHome({ shouldNotifyOpponent: mode === 'room' && !liveStatus.ended });
   }
 
   const whiteName = mode === 'local' ? 'Gracz biały' : playerColor === 'w' ? 'Ty — białe' : 'Gracz biały';
@@ -326,10 +291,10 @@ export default function ChessGame({ mode, room, playerColor, gameState, onGameSt
           history={history}
           viewedMoveIndex={viewedMoveIndex}
           onDismissEvent={setDismissedEventId}
-          onAcceptDraw={acceptDraw}
-          onDeclineDraw={declineDraw}
+          onAcceptDraw={() => roomActions?.acceptDraw()}
+          onDeclineDraw={() => roomActions?.declineDraw()}
           onShowHistoryPosition={setViewedMoveIndex}
-          onOfferDraw={offerDraw}
+          onOfferDraw={() => roomActions?.offerDraw()}
           onResign={() => setPendingAction('resign')}
           onStartNewGame={startNewLocalGame}
         />
@@ -346,7 +311,10 @@ export default function ChessGame({ mode, room, playerColor, gameState, onGameSt
           title="Czy na pewno chcesz się poddać?"
           description="Partia zostanie od razu zakończona, a zwycięstwo otrzyma przeciwnik."
           confirmLabel="Poddaj partię"
-          onConfirm={resignGame}
+          onConfirm={() => {
+            roomActions?.resign();
+            setPendingAction(null);
+          }}
           onCancel={() => setPendingAction(null)}
         />
       )}
