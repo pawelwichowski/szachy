@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Chess } from 'chess.js';
 import ChessGame from './components/game/ChessGame';
-import ConfirmDialog from './components/common/ConfirmDialog';
 import CreateRoomDialog from './components/common/CreateRoomDialog';
 import HomeScreen from './components/lobby/HomeScreen';
 import RoomLobby from './components/lobby/RoomLobby';
@@ -14,16 +13,12 @@ import {
   getRoomLink,
   getRoomStorageKey,
   loadSession,
-  normalizeGameState as unusedNormalizeGameState,
   normalizeRoom,
   normalizeRoomCode,
   readRoom,
   SESSION_STORAGE_KEY,
 } from './domain/room';
 import { useRoomSync } from './hooks/useRoomSync';
-
-// Uwaga: normalizeGameState jest importowane z domain/chess. Alias poniżej usuwa się przy pierwszym kolejnym czyszczeniu importów.
-void unusedNormalizeGameState;
 
 export default function App() {
   const roomFromUrl = normalizeRoomCode(new URLSearchParams(window.location.search).get('room') || '');
