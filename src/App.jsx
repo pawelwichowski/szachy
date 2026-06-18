@@ -19,6 +19,9 @@ import {
   SESSION_STORAGE_KEY,
 } from './domain/room';
 import { useRoomSync } from './hooks/useRoomSync';
+import './lobby.css';
+import './stage35.css';
+import './stage36.css';
 
 export default function App() {
   const roomFromUrl = normalizeRoomCode(new URLSearchParams(window.location.search).get('room') || '');
