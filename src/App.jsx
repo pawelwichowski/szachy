@@ -1,49 +1,37 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { Chess } from 'chess.js';
 
 const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
 
-const pieces = {
-  white: {
-    king: '♔',
-    queen: '♕',
-    rook: '♖',
-    bishop: '♗',
-    knight: '♘',
-    pawn: '♙',
+const pieceSymbols = {
+  w: {
+    k: '♔',
+    q: '♕',
+    r: '♖',
+    b: '♗',
+    n: '♘',
+    p: '♙',
   },
-  black: {
-    king: '♚',
-    queen: '♛',
-    rook: '♜',
-    bishop: '♝',
-    knight: '♞',
-    pawn: '♟',
+  b: {
+    k: '♚',
+    q: '♛',
+    r: '♜',
+    b: '♝',
+    n: '♞',
+    p: '♟',
   },
 };
 
-const backRank = ['rook', 'knight', 'bishop', 'queen', 'king', 'bishop', 'knight', 'rook'];
+const pieceNames = {
+  k: 'król',
+  q: 'hetman',
+  r: 'wieża',
+  b: 'goniec',
+  n: 'skoczek',
+  p: 'pion',
+};
 
-function createPiece(color, type, square) {
-  return {
-    id: `${color}-${type}-${square}`,
-    color,
-    type,
-    symbol: pieces[color][type],
-  };
-}
-
-function createInitialBoard() {
-  const board = Array(64).fill(null);
-
-  files.forEach((file, column) => {
-    board[column] = createPiece('black', backRank[column], `${file}8`);
-    board[8 + column] = createPiece('black', 'pawn', `${file}7`);
-    board[48 + column] = createPiece('white', 'pawn', `${file}2`);
-    board[56 + column] = createPiece('white', backRank[column], `${file}1`);
-  });
-
-  return board;
-}
+const promotionChoices = ['q', 'r', 'b', 'n'];
 
 function getSquareName(index) {
   const row = Math.floor(index / 8);
@@ -52,119 +40,236 @@ function getSquareName(index) {
 }
 
 function getColorLabel(color) {
-  return color === 'white' ? 'Białe' : 'Czarne';
+  return color === 'w' ? 'Białe' : 'Czarne';
 }
 
 function getPieceLabel(piece) {
-  const names = {
-    king: 'król',
-    queen: 'hetman',
-    rook: 'wieża',
-    bishop: 'goniec',
-    knight: 'skoczek',
-    pawn: 'pion',
-  };
+  return `${getColorLabel(piece.color)}: ${pieceNames[piece.type]}`;
+}
 
-  return `${getColorLabel(piece.color)}: ${names[piece.type]}`;
+function isGameFinished(game) {
+  return game.isCheckmate() || game.isDraw();
+}
+
+function getGameStatus(game) {
+  const sideToMove = getColorLabel(game.turn());
+
+  if (game.isCheckmate()) {
+    const winner = getColorLabel(game.turn() === 'w' ? 'b' : 'w');
+    return {
+      title: `Mat — wygrywają ${winner}`,
+      description: `Król strony ${sideToMove.toLowerCase()} jest w szachu i nie ma legalnego ruchu.`,
+      ended: true,
+    };
+  }
+
+  if (game.isStalemate()) {
+    return {
+      title: 'Pat — remis',
+      description: `Strona ${sideToMove.toLowerCase()} nie ma legalnego ruchu, ale jej król nie jest szachowany.`,
+      ended: true,
+    };
+  }
+
+  if (game.isDraw()) {
+    return {
+      title: 'Remis',
+      description: 'Partia zakończyła się remisem zgodnie z zasadami szachowymi.',
+      ended: true,
+    };
+  }
+
+  if (game.isCheck()) {
+    return {
+      title: `Szach — ${sideToMove}`,
+      description: 'Musisz wykonać ruch, po którym własny król nie pozostanie w szachu.',
+      ended: false,
+    };
+  }
+
+  return {
+    title: `${sideToMove} na ruchu`,
+    description: 'Wybierz figurę. Podświetlone pola oznaczają tylko legalne ruchy.',
+    ended: false,
+  };
+}
+
+function formatHistoryMove(entry) {
+  return entry.color === 'w' ? `${entry.moveNumber}. ${entry.san}` : `${entry.moveNumber}... ${entry.san}`;
 }
 
 export default function App() {
-  const [board, setBoard] = useState(createInitialBoard);
-  const [turn, setTurn] = useState('white');
+  const [game, setGame] = useState(() => new Chess());
   const [selectedSquare, setSelectedSquare] = useState(null);
   const [draggedSquare, setDraggedSquare] = useState(null);
-  const [lastMove, setLastMove] = useState(null);
-  const [moveHistory, setMoveHistory] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [viewedMoveIndex, setViewedMoveIndex] = useState(null);
+  const [promotionRequest, setPromotionRequest] = useState(null);
 
-  function resetGame() {
-    setBoard(createInitialBoard());
-    setTurn('white');
+  const isHistoryPreview = viewedMoveIndex !== null;
+  const displayedGame = useMemo(() => {
+    if (!isHistoryPreview) {
+      return game;
+    }
+
+    return new Chess(history[viewedMoveIndex].fen);
+  }, [game, history, isHistoryPreview, viewedMoveIndex]);
+
+  const displayedMove = isHistoryPreview ? history[viewedMoveIndex] : history.at(-1);
+  const liveStatus = getGameStatus(game);
+  const interactionLocked = isHistoryPreview || isGameFinished(game);
+
+  const legalTargets = useMemo(() => {
+    if (!selectedSquare || interactionLocked) {
+      return [];
+    }
+
+    return game.moves({ square: selectedSquare, verbose: true }).map((move) => move.to);
+  }, [game, interactionLocked, selectedSquare]);
+
+  function clearSelection() {
     setSelectedSquare(null);
     setDraggedSquare(null);
-    setLastMove(null);
-    setMoveHistory([]);
   }
 
-  function movePiece(from, to) {
-    const movingPiece = board[from];
-    const targetPiece = board[to];
+  function resetGame() {
+    setGame(new Chess());
+    setHistory([]);
+    setViewedMoveIndex(null);
+    setPromotionRequest(null);
+    clearSelection();
+  }
 
-    if (!movingPiece || movingPiece.color !== turn || from === to) {
+  function selectSquare(square) {
+    if (interactionLocked) {
       return;
     }
 
-    if (targetPiece?.color === movingPiece.color) {
-      setSelectedSquare(to);
+    const piece = game.get(square);
+
+    if (piece?.color === game.turn()) {
+      setSelectedSquare(square);
+    }
+  }
+
+  function completeMove({ from, to, promotion }) {
+    if (interactionLocked) {
       return;
     }
 
-    const nextBoard = [...board];
-    nextBoard[to] = movingPiece;
-    nextBoard[from] = null;
+    const nextGame = new Chess(game.fen());
 
-    const fromSquare = getSquareName(from);
-    const toSquare = getSquareName(to);
-    const separator = targetPiece ? '×' : '→';
+    try {
+      const move = nextGame.move({ from, to, promotion });
 
-    setBoard(nextBoard);
-    setLastMove({ from, to });
-    setMoveHistory((previousMoves) => [
-      ...previousMoves,
-      {
-        id: `${movingPiece.id}-${previousMoves.length}`,
-        text: `${movingPiece.symbol} ${fromSquare} ${separator} ${toSquare}`,
-      },
-    ]);
-    setSelectedSquare(null);
-    setTurn((currentTurn) => (currentTurn === 'white' ? 'black' : 'white'));
-  }
-
-  function handleSquareClick(index) {
-    const piece = board[index];
-
-    if (selectedSquare === null) {
-      if (piece?.color === turn) {
-        setSelectedSquare(index);
+      if (!move) {
+        return;
       }
-      return;
-    }
 
-    if (index === selectedSquare) {
-      setSelectedSquare(null);
-      return;
-    }
+      const ply = history.length + 1;
+      const nextEntry = {
+        id: `${ply}-${move.from}-${move.to}-${move.san}`,
+        ply,
+        moveNumber: Math.ceil(ply / 2),
+        color: move.color,
+        san: move.san,
+        from: move.from,
+        to: move.to,
+        fen: nextGame.fen(),
+      };
 
-    if (piece?.color === turn) {
-      setSelectedSquare(index);
-      return;
+      setGame(nextGame);
+      setHistory((previousHistory) => [...previousHistory, nextEntry]);
+      setViewedMoveIndex(null);
+      setPromotionRequest(null);
+      clearSelection();
+    } catch {
+      // chess.js odrzuca nielegalny ruch. Nie zmieniamy wtedy stanu aplikacji.
+      clearSelection();
     }
-
-    movePiece(selectedSquare, index);
   }
 
-  function handleDragStart(event, index) {
-    const piece = board[index];
+  function requestMove(from, to) {
+    const movingPiece = game.get(from);
 
-    if (!piece || piece.color !== turn) {
+    if (!movingPiece || movingPiece.color !== game.turn() || from === to || interactionLocked) {
+      return;
+    }
+
+    const reachesPromotionRank = movingPiece.type === 'p' && (to.endsWith('1') || to.endsWith('8'));
+
+    if (reachesPromotionRank) {
+      setPromotionRequest({ from, to, color: movingPiece.color });
+      return;
+    }
+
+    completeMove({ from, to });
+  }
+
+  function handleSquareClick(square) {
+    if (interactionLocked) {
+      return;
+    }
+
+    const piece = game.get(square);
+
+    if (!selectedSquare) {
+      selectSquare(square);
+      return;
+    }
+
+    if (square === selectedSquare) {
+      clearSelection();
+      return;
+    }
+
+    if (piece?.color === game.turn()) {
+      setSelectedSquare(square);
+      return;
+    }
+
+    requestMove(selectedSquare, square);
+  }
+
+  function handleDragStart(event, square) {
+    const piece = game.get(square);
+
+    if (interactionLocked || !piece || piece.color !== game.turn()) {
       event.preventDefault();
       return;
     }
 
     event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData('text/plain', String(index));
-    setDraggedSquare(index);
-    setSelectedSquare(index);
+    event.dataTransfer.setData('text/plain', square);
+    setDraggedSquare(square);
+    setSelectedSquare(square);
   }
 
-  function handleDrop(event, targetIndex) {
+  function handleDrop(event, targetSquare) {
     event.preventDefault();
-    const sourceIndex = draggedSquare ?? Number(event.dataTransfer.getData('text/plain'));
 
-    if (Number.isInteger(sourceIndex) && sourceIndex !== targetIndex) {
-      movePiece(sourceIndex, targetIndex);
+    if (interactionLocked) {
+      return;
+    }
+
+    const sourceSquare = draggedSquare || event.dataTransfer.getData('text/plain');
+
+    if (sourceSquare && sourceSquare !== targetSquare) {
+      requestMove(sourceSquare, targetSquare);
     }
 
     setDraggedSquare(null);
+  }
+
+  function showHistoryPosition(index) {
+    setViewedMoveIndex(index);
+    setPromotionRequest(null);
+    clearSelection();
+  }
+
+  function returnToLivePosition() {
+    setViewedMoveIndex(null);
+    clearSelection();
   }
 
   return (
@@ -174,54 +279,75 @@ export default function App() {
           <p className="eyebrow">PROJEKT · APLIKACJE INTERNETOWE</p>
           <h1>Szachy online</h1>
         </div>
-        <span className="stage-badge">Etap 1: szachownica</span>
+        <span className="stage-badge">Etap 2: legalne ruchy i mat</span>
       </header>
 
       <section className="game-layout" aria-label="Widok partii szachowej">
         <div className="board-section">
-          <div className="player-row player-row-black">
+          <div className={`player-row player-row-black ${game.turn() === 'b' && !liveStatus.ended ? 'player-active' : ''}`}>
             <span className="player-avatar">♚</span>
             <div>
               <strong>Gracz czarny</strong>
-              <p>Oczekuje na ruch</p>
+              <p>{game.turn() === 'b' && !liveStatus.ended ? 'Wykonuje ruch' : 'Czeka na ruch'}</p>
             </div>
             <span className="clock">10:00</span>
           </div>
 
+          {isHistoryPreview && (
+            <div className="history-preview-banner" role="status">
+              <div>
+                <strong>Podgląd pozycji po ruchu: {formatHistoryMove(history[viewedMoveIndex])}</strong>
+                <span>Plansza jest tylko do odczytu.</span>
+              </div>
+              <button type="button" onClick={returnToLivePosition}>
+                Wróć do bieżącej pozycji
+              </button>
+            </div>
+          )}
+
           <div className="board-frame">
-            <div className="chessboard" role="grid" aria-label="Szachownica">
-              {board.map((piece, index) => {
+            <div className={`chessboard ${interactionLocked ? 'chessboard-readonly' : ''}`} role="grid" aria-label="Szachownica">
+              {Array.from({ length: 64 }, (_, index) => {
                 const row = Math.floor(index / 8);
                 const column = index % 8;
-                const squareName = getSquareName(index);
+                const square = getSquareName(index);
+                const piece = displayedGame.get(square);
                 const isLightSquare = (row + column) % 2 === 0;
-                const isSelected = selectedSquare === index;
-                const isLastMove = lastMove?.from === index || lastMove?.to === index;
+                const isSelected = !isHistoryPreview && selectedSquare === square;
+                const isLegalTarget = !isHistoryPreview && legalTargets.includes(square);
+                const isCaptureTarget = isLegalTarget && Boolean(game.get(square));
+                const isLastMove = displayedMove?.from === square || displayedMove?.to === square;
 
                 return (
                   <button
                     className={`square ${isLightSquare ? 'square-light' : 'square-dark'} ${
                       isSelected ? 'square-selected' : ''
-                    } ${isLastMove ? 'square-last-move' : ''}`}
-                    key={squareName}
+                    } ${isLastMove ? 'square-last-move' : ''} ${isLegalTarget ? 'square-legal' : ''} ${
+                      isCaptureTarget ? 'square-legal-capture' : ''
+                    }`}
+                    key={square}
                     type="button"
                     role="gridcell"
-                    aria-label={piece ? `${squareName}, ${getPieceLabel(piece)}` : `${squareName}, puste pole`}
-                    onClick={() => handleSquareClick(index)}
-                    onDragOver={(event) => event.preventDefault()}
-                    onDrop={(event) => handleDrop(event, index)}
+                    aria-label={piece ? `${square}, ${getPieceLabel(piece)}` : `${square}, puste pole`}
+                    onClick={() => handleSquareClick(square)}
+                    onDragOver={(event) => {
+                      if (!interactionLocked) {
+                        event.preventDefault();
+                      }
+                    }}
+                    onDrop={(event) => handleDrop(event, square)}
                   >
                     {column === 0 && <span className="rank-label">{8 - row}</span>}
                     {row === 7 && <span className="file-label">{files[column]}</span>}
                     {piece && (
                       <span
-                        className={`piece piece-${piece.color}`}
-                        draggable={piece.color === turn}
-                        onDragStart={(event) => handleDragStart(event, index)}
+                        className={`piece piece-${piece.color === 'w' ? 'white' : 'black'}`}
+                        draggable={!interactionLocked && piece.color === game.turn()}
+                        onDragStart={(event) => handleDragStart(event, square)}
                         onDragEnd={() => setDraggedSquare(null)}
                         aria-hidden="true"
                       >
-                        {piece.symbol}
+                        {pieceSymbols[piece.color][piece.type]}
                       </span>
                     )}
                   </button>
@@ -230,40 +356,49 @@ export default function App() {
             </div>
           </div>
 
-          <div className="player-row player-row-white">
+          <div className={`player-row player-row-white ${game.turn() === 'w' && !liveStatus.ended ? 'player-active' : ''}`}>
             <span className="player-avatar">♔</span>
             <div>
               <strong>Gracz biały</strong>
-              <p>Twoja strona</p>
+              <p>{game.turn() === 'w' && !liveStatus.ended ? 'Wykonuje ruch' : 'Czeka na ruch'}</p>
             </div>
             <span className="clock">10:00</span>
           </div>
         </div>
 
         <aside className="game-panel">
-          <section className="turn-card">
-            <p className="panel-label">TERAZ GRA</p>
-            <h2>{getColorLabel(turn)}</h2>
+          <section className={`turn-card ${liveStatus.ended ? 'turn-card-ended' : ''}`}>
+            <p className="panel-label">{isHistoryPreview ? 'PODGLĄD HISTORII' : 'STATUS PARTII'}</p>
+            <h2>{isHistoryPreview ? `Po ruchu ${formatHistoryMove(history[viewedMoveIndex])}` : liveStatus.title}</h2>
             <p>
-              {selectedSquare === null
-                ? 'Wybierz figurę kliknięciem lub przeciągnij ją na wybrane pole.'
-                : `Wybrano pole ${getSquareName(selectedSquare)}. Wybierz pole docelowe.`}
+              {isHistoryPreview
+                ? 'Kliknij „Wróć do bieżącej pozycji”, aby dalej grać.'
+                : selectedSquare
+                  ? `Wybrano ${selectedSquare}. Podświetlone pola są legalnymi celami.`
+                  : liveStatus.description}
             </p>
           </section>
 
           <section className="moves-card">
             <div className="card-heading">
               <h2>Historia ruchów</h2>
-              <span>{moveHistory.length}</span>
+              <span>{history.length}</span>
             </div>
-            {moveHistory.length === 0 ? (
+            {history.length === 0 ? (
               <p className="empty-moves">Pierwszy ruch jeszcze nie został wykonany.</p>
             ) : (
               <ol className="move-list">
-                {moveHistory.map((move, index) => (
-                  <li key={move.id}>
-                    <span>{index + 1}.</span>
-                    {move.text}
+                {history.map((entry, index) => (
+                  <li key={entry.id}>
+                    <button
+                      className={`move-button ${viewedMoveIndex === index ? 'move-button-active' : ''}`}
+                      type="button"
+                      onClick={() => showHistoryPosition(index)}
+                      aria-pressed={viewedMoveIndex === index}
+                    >
+                      <span>{entry.ply}.</span>
+                      {formatHistoryMove(entry)}
+                    </button>
                   </li>
                 ))}
               </ol>
@@ -271,15 +406,40 @@ export default function App() {
           </section>
 
           <button className="reset-button" type="button" onClick={resetGame}>
-            Ustaw figurki od nowa
+            Rozpocznij nową partię
           </button>
 
           <p className="demo-note">
-            W tym etapie figury można przesuwać oraz zbijać przeciwnika, ale aplikacja nie sprawdza jeszcze
-            szczegółowych zasad ruchu, szacha ani mata.
+            Zasady ruchów, szach, mat, pat, roszada, bicie w przelocie i promocja pionka są sprawdzane przez
+            silnik reguł szachowych. Kliknięcie ruchu w historii pokazuje pozycję dokładnie po tym ruchu.
           </p>
         </aside>
       </section>
+
+      {promotionRequest && (
+        <div className="promotion-backdrop" role="presentation">
+          <section className="promotion-dialog" role="dialog" aria-modal="true" aria-labelledby="promotion-title">
+            <p className="panel-label">PROMOCJA PIONKA</p>
+            <h2 id="promotion-title">Wybierz figurę</h2>
+            <p>Pion dotarł do ostatniego rzędu. Wybierz figurę, w którą ma zostać zamieniony.</p>
+            <div className="promotion-options">
+              {promotionChoices.map((pieceType) => (
+                <button
+                  key={pieceType}
+                  type="button"
+                  onClick={() => completeMove({ ...promotionRequest, promotion: pieceType })}
+                  aria-label={`Promuj na ${pieceNames[pieceType]}`}
+                >
+                  {pieceSymbols[promotionRequest.color][pieceType]}
+                </button>
+              ))}
+            </div>
+            <button className="promotion-cancel" type="button" onClick={() => setPromotionRequest(null)}>
+              Anuluj ruch
+            </button>
+          </section>
+        </div>
+      )}
     </main>
   );
 }
