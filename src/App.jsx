@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Chess } from 'chess.js';
 import './lobby.css';
 import './stage35.css';
+import './stage36.css';
 
 const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
 const ROOM_STORAGE_PREFIX = 'szachy:room:';
@@ -30,6 +31,7 @@ function createInitialGameState() {
     history: [],
     drawOffer: null,
     result: null,
+    lastEvent: null,
   };
 }
 
@@ -41,6 +43,7 @@ function normalizeGameState(state) {
     history: Array.isArray(state?.history) ? state.history : [],
     drawOffer: state?.drawOffer || null,
     result: state?.result || null,
+    lastEvent: state?.lastEvent || null,
   };
 }
 
@@ -117,6 +120,14 @@ function loadSession() {
   }
 }
 
+function createEvent(type, actor) {
+  return {
+    id: `${type}-${actor}-${Date.now()}`,
+    type,
+    actor,
+  };
+}
+
 function getGameStatus(game, result = null) {
   if (result?.type === 'resignation') {
     return {
@@ -130,6 +141,14 @@ function getGameStatus(game, result = null) {
     return {
       title: 'Remis uzgodniony',
       description: 'Obaj gracze zgodzili się zakończyć partię remisem.',
+      ended: true,
+    };
+  }
+
+  if (result?.type === 'opponent-left') {
+    return {
+      title: 'Przeciwnik opuścił partię',
+      description: `Gracz po stronie ${getColorLabel(result.leftBy).toLowerCase()} opuścił pokój. Aktualna pozycja została zachowana.`,
       ended: true,
     };
   }
@@ -271,7 +290,7 @@ function HomeScreen({ joinCode, onJoinCodeChange, onOpenCreateRoom, onJoinRoom, 
           <p className="eyebrow">PROJEKT · APLIKACJE INTERNETOWE</p>
           <h1>Szachy online</h1>
         </div>
-        <span className="stage-badge">Etap 3.5: sterowanie partią</span>
+        <span className="stage-badge">Etap 3.6: komunikaty pokojów</span>
       </header>
 
       <section className="hero-panel">
@@ -449,6 +468,7 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
   const [viewedMoveIndex, setViewedMoveIndex] = useState(null);
   const [promotionRequest, setPromotionRequest] = useState(null);
   const [pendingAction, setPendingAction] = useState(null);
+  const [dismissedEventId, setDismissedEventId] = useState(null);
 
   const state = normalizeGameState(gameState);
   const game = useMemo(() => new Chess(state.fen), [state.fen]);
@@ -469,9 +489,11 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
   const isPlayerTurn = mode === 'local' || game.turn() === playerColor;
   const interactionLocked = isHistoryPreview || liveStatus.ended || !isPlayerTurn;
   const actionColor = mode === 'local' ? game.turn() : playerColor;
-  const canRespondToDraw = Boolean(drawOffer && drawOffer !== actionColor && !liveStatus.ended);
-  const canStartNewGame = mode === 'local' || liveStatus.ended;
+  const canRespondToDraw = mode === 'room' && Boolean(drawOffer && drawOffer !== actionColor && !liveStatus.ended);
+  const canOfferDraw = mode === 'room' && !liveStatus.ended && !drawOffer;
   const boardOrientation = mode === 'room' ? playerColor : 'w';
+  const activeEvent = state.lastEvent?.id === dismissedEventId ? null : state.lastEvent;
+  const drawWasDeclined = mode === 'room' && activeEvent?.type === 'draw-declined' && activeEvent.actor !== actionColor;
 
   const boardIndexes = useMemo(
     () => Array.from({ length: 64 }, (_, visualIndex) => (boardOrientation === 'b' ? 63 - visualIndex : visualIndex)),
@@ -502,12 +524,13 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
   }
 
   function startNewGame() {
-    if (!canStartNewGame) {
+    if (mode !== 'local') {
       return;
     }
 
     setViewedMoveIndex(null);
     setPromotionRequest(null);
+    setDismissedEventId(null);
     clearSelection();
     onGameStateChange(createInitialGameState());
   }
@@ -548,6 +571,9 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
         fen: nextGame.fen(),
       };
 
+      const declinedByMove = mode === 'room' && drawOffer && drawOffer !== move.color;
+      const nextEvent = declinedByMove ? createEvent('draw-declined', move.color) : null;
+
       setViewedMoveIndex(null);
       setPromotionRequest(null);
       clearSelection();
@@ -555,6 +581,8 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
         ...state,
         fen: nextGame.fen(),
         history: [...history, nextEntry],
+        drawOffer: declinedByMove ? null : drawOffer,
+        lastEvent: nextEvent,
       });
     } catch {
       clearSelection();
@@ -639,22 +667,26 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
   }
 
   function offerDraw() {
-    if (liveStatus.ended || drawOffer) {
+    if (!canOfferDraw) {
       return;
     }
 
-    replaceGameState({ drawOffer: actionColor });
+    replaceGameState({ drawOffer: actionColor, lastEvent: null });
   }
 
   function acceptDraw() {
     replaceGameState({
       drawOffer: null,
       result: { type: 'agreed-draw' },
+      lastEvent: null,
     });
   }
 
   function declineDraw() {
-    replaceGameState({ drawOffer: null });
+    replaceGameState({
+      drawOffer: null,
+      lastEvent: createEvent('draw-declined', actionColor),
+    });
   }
 
   function resignGame() {
@@ -664,6 +696,7 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
 
     replaceGameState({
       drawOffer: null,
+      lastEvent: null,
       result: {
         type: 'resignation',
         resignedBy: actionColor,
@@ -671,6 +704,15 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
       },
     });
     setPendingAction(null);
+  }
+
+  function returnToHomeFromGame() {
+    setPendingAction(null);
+    onReturnHome({
+      shouldNotifyOpponent: mode === 'room' && !liveStatus.ended,
+      gameState: state,
+      playerColor: actionColor,
+    });
   }
 
   const whiteName = mode === 'local' ? 'Gracz biały' : playerColor === 'w' ? 'Ty — białe' : 'Gracz biały';
@@ -795,6 +837,19 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
             </p>
           </section>
 
+          {drawWasDeclined && (
+            <section className="game-event-card" aria-live="polite">
+              <div>
+                <p className="panel-label">OFERTA REMISU</p>
+                <h2>Przeciwnik odrzucił ofertę remisu</h2>
+                <p>Partia trwa dalej.</p>
+              </div>
+              <button type="button" onClick={() => setDismissedEventId(activeEvent.id)} aria-label="Zamknij komunikat">
+                ×
+              </button>
+            </section>
+          )}
+
           {canRespondToDraw && (
             <section className="draw-offer-card" aria-live="polite">
               <p className="panel-label">OFERTA REMISU</p>
@@ -807,7 +862,7 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
             </section>
           )}
 
-          {drawOffer && !canRespondToDraw && !liveStatus.ended && (
+          {mode === 'room' && drawOffer && !canRespondToDraw && !liveStatus.ended && (
             <section className="draw-offer-card draw-offer-sent" aria-live="polite">
               <p className="panel-label">OFERTA REMISU</p>
               <h2>Oferta została wysłana</h2>
@@ -841,30 +896,19 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
             )}
           </section>
 
-          <section className="game-actions-card">
-            <p className="panel-label">DZIAŁANIA W PARTII</p>
-            <button
-              className="secondary-action"
-              type="button"
-              onClick={offerDraw}
-              disabled={liveStatus.ended || Boolean(drawOffer)}
-            >
-              {drawOffer === actionColor ? 'Oferta remisu wysłana' : 'Zaproponuj remis'}
-            </button>
-            <button
-              className="danger-action"
-              type="button"
-              onClick={() => setPendingAction('resign')}
-              disabled={liveStatus.ended}
-            >
-              Poddaj partię
-            </button>
-            <button className="menu-action" type="button" onClick={() => setPendingAction('menu')}>
-              Wróć do menu głównego
-            </button>
-          </section>
+          {mode === 'room' && (
+            <section className="game-actions-card">
+              <p className="panel-label">DZIAŁANIA W PARTII</p>
+              <button className="secondary-action" type="button" onClick={offerDraw} disabled={!canOfferDraw}>
+                {drawOffer === actionColor ? 'Oferta remisu wysłana' : 'Zaproponuj remis'}
+              </button>
+              <button className="danger-action" type="button" onClick={() => setPendingAction('resign')} disabled={liveStatus.ended}>
+                Poddaj partię
+              </button>
+            </section>
+          )}
 
-          {canStartNewGame && (
+          {mode === 'local' && (
             <button className="reset-button" type="button" onClick={startNewGame}>
               Rozpocznij nową partię
             </button>
@@ -913,10 +957,10 @@ function ChessGame({ mode, room, playerColor, gameState, onGameStateChange, onBa
       {pendingAction === 'menu' && (
         <ConfirmDialog
           title="Wrócić do menu głównego?"
-          description={mode === 'room' ? 'Opuścisz bieżący pokój w tej karcie. Pokój i jego aktualna pozycja pozostaną dostępne dla drugiego gracza.' : 'Bieżąca lokalna partia zostanie zamknięta.'}
+          description={mode === 'room' ? 'Opuścisz bieżący pokój w tej karcie. Drugi gracz zostanie poinformowany, że opuściłeś partię.' : 'Bieżąca lokalna partia zostanie zamknięta.'}
           confirmLabel="Wróć do menu"
           confirmClassName="primary-action"
-          onConfirm={onReturnHome}
+          onConfirm={returnToHomeFromGame}
           onCancel={() => setPendingAction(null)}
         />
       )}
@@ -1106,7 +1150,23 @@ export default function App() {
     }
   }
 
-  function returnToHome() {
+  function returnToHome({ shouldNotifyOpponent = false, gameState = null, playerColor = null } = {}) {
+    if (shouldNotifyOpponent && room && gameState && playerColor) {
+      const nextState = normalizeGameState({
+        ...gameState,
+        drawOffer: null,
+        lastEvent: null,
+        result: { type: 'opponent-left', leftBy: playerColor },
+      });
+
+      persistRoom({
+        ...room,
+        status: 'completed',
+        updatedAt: new Date().toISOString(),
+        state: nextState,
+      });
+    }
+
     saveSession(null);
     setRoom(null);
     setScreen('home');
