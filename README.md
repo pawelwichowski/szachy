@@ -2,7 +2,7 @@
 
 Projekt na przedmiot **Aplikacje internetowe**. Aplikacja jest rozwijana etapami jako klient React, a w kolejnych etapach otrzyma serwer Python/Flask i bazę danych.
 
-## Aktualny etap: pokoje, sterowanie partią i orientacja planszy
+## Aktualny etap: pokoje, sterowanie partią i komunikaty
 
 - strona startowa z grą lokalną, tworzeniem prywatnego pokoju i dołączaniem kodem;
 - wybór koloru gospodarza pokoju: **białe**, **czarne** albo **losowo**;
@@ -11,8 +11,10 @@ Projekt na przedmiot **Aplikacje internetowe**. Aplikacja jest rozwijana etapami
 - prywatny kod i link do pokoju;
 - synchronizacja pozycji i historii ruchów między kartami tej samej przeglądarki;
 - blokowanie ruchów po stronie gracza, który nie ma tury;
-- przycisk poddania partii z potwierdzeniem i poprawnym wynikiem;
-- oferta remisu oraz zaakceptowanie albo odrzucenie jej przez przeciwnika;
+- przycisk poddania partii z potwierdzeniem i poprawnym wynikiem — tylko w pokoju;
+- oferta remisu, zaakceptowanie albo odrzucenie jej przez przeciwnika — tylko w pokoju;
+- komunikat dla autora oferty, gdy przeciwnik odrzuci remis;
+- informacja „Przeciwnik opuścił partię”, gdy drugi gracz wróci z aktywnej partii do menu;
 - wyraźny powrót do menu głównego z potwierdzeniem;
 - legalne ruchy, szach, mat, pat, remisy, roszada, bicie w przelocie i promocja pionka;
 - historia ruchów w SAN oraz podgląd pozycji po wybranym ruchu.
@@ -28,7 +30,8 @@ Reguły gry obsługuje biblioteka `chess.js`. Pozycja po każdym ruchu jest zapi
 5. Otwórz link w drugiej karcie **tej samej przeglądarki** albo ręcznie wpisz kod na stronie startowej.
 6. W drugiej karcie kliknij **Dołącz do pokoju**.
 7. Pierwsza karta gra wybranym kolorem, a druga przeciwnym. Każda osoba ma własne figury na dole planszy.
-8. Przetestuj ofertę remisu, poddanie i synchronizację ruchów między kartami.
+8. Z pierwszej karty zaproponuj remis, a w drugiej kliknij **Odrzuć**. W pierwszej karcie pojawi się komunikat o odrzuceniu.
+9. W jednej z kart wybierz **Menu główne** i potwierdź. Druga karta otrzyma informację o opuszczeniu partii i nie będzie mogła wykonać kolejnych ruchów.
 
 > Obecnie pokoje są demonstracją frontendową: używają `localStorage` i `BroadcastChannel`, więc działają tylko w obrębie tego samego profilu przeglądarki. W etapie z Flask i WebSocket synchronizacja zostanie przeniesiona na serwer i zacznie działać między różnymi urządzeniami.
 
