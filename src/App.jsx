@@ -1,36 +1,30 @@
-import { useState } from 'react';
-import { Chess } from 'chess.js';
+import { useCallback, useState } from 'react';
 import ChessGame from './components/game/ChessGame';
+import ConnectionNotice from './components/common/ConnectionNotice';
 import CreateRoomDialog from './components/common/CreateRoomDialog';
 import HomeScreen from './components/lobby/HomeScreen';
 import RoomLobby from './components/lobby/RoomLobby';
-import { createInitialGameState, getGameStatus, normalizeGameState } from './domain/chess';
+import { createInitialGameState } from './domain/chess';
 import {
-  createRoom,
-  generateRoomCode,
-  getGuestColor,
   getRandomColor,
   getRoomLink,
-  getRoomStorageKey,
   loadSession,
-  normalizeRoom,
   normalizeRoomCode,
-  readRoom,
   SESSION_STORAGE_KEY,
 } from './domain/room';
-import { useRoomSync } from './hooks/useRoomSync';
+import { useOnlineRoom } from './hooks/useOnlineRoom';
 import './lobby.css';
 import './stage35.css';
 import './stage36.css';
+import './online.css';
 
 export default function App() {
   const roomFromUrl = normalizeRoomCode(new URLSearchParams(window.location.search).get('room') || '');
   const initialSession = roomFromUrl ? null : loadSession();
-  const initialRoom = initialSession?.code ? readRoom(initialSession.code) : null;
 
-  const [session, setSession] = useState(initialRoom ? initialSession : null);
-  const [room, setRoom] = useState(initialRoom);
-  const [screen, setScreen] = useState(initialRoom ? (initialRoom.status === 'waiting' ? 'lobby' : 'game') : 'home');
+  const [session, setSession] = useState(initialSession);
+  const [room, setRoom] = useState(null);
+  const [screen, setScreen] = useState(initialSession ? 'game' : 'home');
   const [localGameState, setLocalGameState] = useState(createInitialGameState);
   const [joinCode, setJoinCode] = useState(roomFromUrl);
   const [joinError, setJoinError] = useState('');
@@ -38,7 +32,30 @@ export default function App() {
   const [createRoomOpen, setCreateRoomOpen] = useState(false);
   const [selectedHostColor, setSelectedHostColor] = useState('w');
 
-  const publishRoomUpdate = useRoomSync(session, setRoom);
+  const clearSessionAndReturnHome = useCallback(() => {
+    try {
+      window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
+    } catch {
+      // Brak sessionStorage nie blokuje powrotu do menu.
+    }
+
+    setSession(null);
+    setRoom(null);
+    setScreen('home');
+    setCopiedMessage('');
+    setJoinError('');
+  }, []);
+
+  const handleRoomState = useCallback((nextRoom) => {
+    setRoom(nextRoom);
+    setScreen(nextRoom.status === 'waiting' ? 'lobby' : 'game');
+  }, []);
+
+  const online = useOnlineRoom({
+    session,
+    onRoomState: handleRoomState,
+    onSessionRejected: clearSessionAndReturnHome,
+  });
 
   function saveSession(nextSession) {
     setSession(nextSession);
@@ -50,40 +67,25 @@ export default function App() {
         window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
       }
     } catch {
-      // Bieżąca karta nadal może działać, gdy sessionStorage jest niedostępne.
+      // Bieżąca karta nadal może działać do chwili odświeżenia strony.
     }
   }
 
-  function persistRoom(nextRoom) {
-    const normalizedRoom = normalizeRoom(nextRoom);
+  async function createPrivateRoom() {
+    const color = selectedHostColor === 'random' ? getRandomColor() : selectedHostColor;
+    const response = await online.createRoom(color);
 
-    try {
-      window.localStorage.setItem(getRoomStorageKey(normalizedRoom.code), JSON.stringify(normalizedRoom));
-      publishRoomUpdate(normalizedRoom.code);
-    } catch {
-      // Bieżąca karta nadal pokazuje nowy stan nawet bez localStorage.
+    if (!response.ok) {
+      return;
     }
 
-    setRoom(normalizedRoom);
-  }
-
-  function createPrivateRoom() {
-    let code = generateRoomCode();
-    while (readRoom(code)) {
-      code = generateRoomCode();
-    }
-
-    const hostColor = selectedHostColor === 'random' ? getRandomColor() : selectedHostColor;
-    const nextRoom = createRoom(code, hostColor);
-
-    saveSession({ code, color: hostColor });
-    persistRoom(nextRoom);
-    setCopiedMessage('');
+    saveSession(response.session);
+    handleRoomState(response.room);
     setCreateRoomOpen(false);
-    setScreen('lobby');
+    setCopiedMessage('');
   }
 
-  function joinPrivateRoom() {
+  async function joinPrivateRoom() {
     const code = normalizeRoomCode(joinCode);
     setJoinError('');
 
@@ -92,35 +94,14 @@ export default function App() {
       return;
     }
 
-    const foundRoom = readRoom(code);
-    if (!foundRoom) {
-      setJoinError('Nie znaleziono pokoju o takim kodzie.');
+    const response = await online.joinRoom(code);
+    if (!response.ok) {
+      setJoinError(response.error || 'Nie udało się dołączyć do pokoju.');
       return;
     }
 
-    if (foundRoom.status === 'completed') {
-      setJoinError('Ta partia została już zakończona.');
-      return;
-    }
-
-    const guestColor = getGuestColor(foundRoom);
-    const guestSpotTaken = guestColor === 'w' ? foundRoom.whitePlayer : foundRoom.blackPlayer;
-    if (guestSpotTaken) {
-      setJoinError('Ten pokój jest już pełny.');
-      return;
-    }
-
-    const joinedRoom = {
-      ...foundRoom,
-      status: 'active',
-      whitePlayer: guestColor === 'w' ? true : foundRoom.whitePlayer,
-      blackPlayer: guestColor === 'b' ? true : foundRoom.blackPlayer,
-      updatedAt: new Date().toISOString(),
-    };
-
-    saveSession({ code, color: guestColor });
-    persistRoom(joinedRoom);
-    setScreen('game');
+    saveSession(response.session);
+    handleRoomState(response.room);
   }
 
   function startLocalGame() {
@@ -130,21 +111,12 @@ export default function App() {
     setScreen('game');
   }
 
-  function updateRoomGameState(nextState) {
-    if (!room) {
-      return;
+  async function returnToHome({ shouldNotifyOpponent = false } = {}) {
+    if (shouldNotifyOpponent && session && room?.status === 'active') {
+      await online.leaveRoom();
     }
 
-    const normalizedState = normalizeGameState(nextState);
-    const nextGame = new Chess(normalizedState.fen);
-    const nextRoom = {
-      ...room,
-      status: getGameStatus(nextGame, normalizedState.result).ended ? 'completed' : 'active',
-      updatedAt: new Date().toISOString(),
-      state: normalizedState,
-    };
-
-    persistRoom(nextRoom);
+    clearSessionAndReturnHome();
   }
 
   async function copyText(text, message) {
@@ -156,32 +128,10 @@ export default function App() {
     }
   }
 
-  function returnToHome({ shouldNotifyOpponent = false, gameState = null, playerColor = null } = {}) {
-    if (shouldNotifyOpponent && room && gameState && playerColor) {
-      const nextState = normalizeGameState({
-        ...gameState,
-        drawOffer: null,
-        lastEvent: null,
-        result: { type: 'opponent-left', leftBy: playerColor },
-      });
-
-      persistRoom({
-        ...room,
-        status: 'completed',
-        updatedAt: new Date().toISOString(),
-        state: nextState,
-      });
-    }
-
-    saveSession(null);
-    setRoom(null);
-    setScreen('home');
-    setCopiedMessage('');
-    setJoinError('');
-  }
+  let content;
 
   if (screen === 'home') {
-    return (
+    content = (
       <>
         <HomeScreen
           joinCode={joinCode}
@@ -204,10 +154,8 @@ export default function App() {
         )}
       </>
     );
-  }
-
-  if (screen === 'lobby' && room && session) {
-    return (
+  } else if (screen === 'lobby' && room && session) {
+    content = (
       <RoomLobby
         room={room}
         playerColor={session.color}
@@ -215,26 +163,40 @@ export default function App() {
         onCopyCode={() => copyText(room.code, 'Kod pokoju skopiowano do schowka.')}
         onCopyLink={() => copyText(getRoomLink(room.code), 'Link do pokoju skopiowano do schowka.')}
         onContinue={() => setScreen('game')}
-        onLeaveRoom={returnToHome}
+        onLeaveRoom={() => returnToHome({ shouldNotifyOpponent: false })}
+      />
+    );
+  } else {
+    const isRoomGame = Boolean(room && session);
+
+    content = (
+      <ChessGame
+        mode={isRoomGame ? 'room' : 'local'}
+        room={room}
+        playerColor={session?.color}
+        gameState={isRoomGame ? room.state : localGameState}
+        onLocalGameStateChange={setLocalGameState}
+        roomActions={isRoomGame ? {
+          makeMove: online.makeMove,
+          offerDraw: online.offerDraw,
+          acceptDraw: online.acceptDraw,
+          declineDraw: online.declineDraw,
+          resign: online.resign,
+        } : null}
+        onBackToLobby={() => setScreen('lobby')}
+        onReturnHome={returnToHome}
       />
     );
   }
 
-  const isRoomGame = Boolean(room && session);
-
   return (
-    <ChessGame
-      mode={isRoomGame ? 'room' : 'local'}
-      room={room}
-      playerColor={session?.color}
-      gameState={isRoomGame ? room.state : localGameState}
-      onGameStateChange={isRoomGame ? updateRoomGameState : setLocalGameState}
-      onBackToLobby={() => {
-        if (isRoomGame) {
-          setScreen('lobby');
-        }
-      }}
-      onReturnHome={returnToHome}
-    />
+    <>
+      {content}
+      <ConnectionNotice
+        connectionState={online.connectionState}
+        message={online.serverError}
+        onDismiss={online.clearServerError}
+      />
+    </>
   );
 }
